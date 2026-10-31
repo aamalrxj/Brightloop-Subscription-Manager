@@ -6,9 +6,32 @@ import crypto from 'crypto';
 import { z } from 'zod';
 import User from '../models/User.js';
 import { passwordRule } from '../utils/password.js';
+import { sendEmail } from '../services/emailService.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
+import rateLimit from 'express-rate-limit';
 
 const router = Router();
+
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: {
+    message: 'Too many login attempts. Try again after 15 minutes.',
+  },
+});
+
+const forgotPasswordLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: {
+    message: 'Too many password reset requests. Try again later.',
+  },
+});
+
 const wrap = fn => (req, res, next) =>
   fn(req, res, next).catch(next);
 
@@ -16,6 +39,14 @@ const pwd = z.string().regex(
   passwordRule,
   'Password must be 9+ chars with uppercase, lowercase and a special character'
 );
+
+const cookieOptions = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: 'lax',
+  maxAge: 864e5,
+  path: '/',
+};
 
 const sign = (res, user) => {
   const token = jwt.sign(
@@ -54,7 +85,7 @@ router.post('/signup', wrap(async (req, res) => {
   });
 }));
 
-router.post('/login', wrap(async (req, res) => {
+router.post('/login', loginLimiter, wrap(async (req, res) => {
   const { email, password } = req.body;
 
   const user = await User.findOne({ email }).select('+password');
@@ -82,7 +113,13 @@ router.post('/login', wrap(async (req, res) => {
 }));
 
 router.post('/logout', (req, res) => {
-  res.clearCookie('token');
+  res.clearCookie('token', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/',
+  });
+
   res.json({ ok: true });
 });
 
@@ -194,8 +231,13 @@ router.patch('/staff/:id', requireAuth, requireRole('admin'), wrap(async (req, r
 }));
 
 // Forgot password: reset link is currently logged to console
-router.post('/forgot', wrap(async (req, res) => {
-  const user = await User.findOne({ email: req.body.email });
+router.post('/forgot', forgotPasswordLimiter, wrap(async (req, res) => {  const { email } = z.object({
+    email: z.string().email(),
+  }).parse(req.body);
+
+  const user = await User.findOne({
+    email: email.toLowerCase().trim(),
+  });
 
   if (user) {
     const raw = crypto.randomBytes(32).toString('hex');

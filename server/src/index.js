@@ -1,3 +1,4 @@
+
 import 'dotenv/config';
 import express from 'express';
 import mongoose from 'mongoose';
@@ -15,19 +16,19 @@ import reportRoutes from './routes/reports.js';
 import portalRoutes from './routes/portal.js';
 
 import { errorHandler } from './middleware/errorHandler.js';
+import { startBillingScheduler } from './services/billingScheduler.js';
 
 const app = express();
 
-// Global middleware
 app.use(cors({
   origin: process.env.CLIENT_URL,
-  credentials: true
+  credentials: true,
 }));
 
 app.use(express.json());
 app.use(cookieParser());
 
-// API routes — each mounted only once
+// API routes
 app.use('/api/auth', authRoutes);
 app.use('/api/customers', customerRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
@@ -38,11 +39,16 @@ app.use('/api/reports', reportRoutes);
 app.use('/api/portal', portalRoutes);
 app.use('/api', catalogRoutes);
 
-// Error handler must be registered after all routes
+// Error handler must remain after all routes.
 app.use(errorHandler);
 
-// Connect to MongoDB and start server
+// Connect to MongoDB before starting the scheduler and server.
 await mongoose.connect(process.env.MONGO_URI);
+
+console.log('MongoDB connected successfully');
+
+// Start automatic recurring billing.
+startBillingScheduler();
 
 const PORT = process.env.PORT || 5000;
 

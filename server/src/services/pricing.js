@@ -5,8 +5,7 @@ import { httpError } from '../utils/http.js';
 export const round2 = n =>
   Math.round((n + Number.EPSILON) * 100) / 100;
 
-// Validate included products.
-// Their individual prices are not charged separately.
+// Validate included products and calculate selected variant surcharges.
 export async function priceLines(inputLines, plan) {
   if (!inputLines?.length) {
     throw httpError(400, 'Add at least one included product');
@@ -31,7 +30,13 @@ export async function priceLines(inputLines, plan) {
       );
     }
 
-    if (plan && line.qty < plan.minQty) {
+    const qty = Number(line.qty);
+
+    if (!Number.isInteger(qty) || qty < 1) {
+      throw httpError(400, 'Product quantity must be a whole number of at least 1');
+    }
+
+    if (plan && qty < plan.minQty) {
       throw httpError(
         400,
         `Minimum quantity for this plan is ${plan.minQty}`
@@ -39,6 +44,7 @@ export async function priceLines(inputLines, plan) {
     }
 
     let variantLabel;
+    let variantExtraPrice = 0;
 
     if (line.variant) {
       const variant = product.variants.find(
@@ -50,16 +56,18 @@ export async function priceLines(inputLines, plan) {
       }
 
       variantLabel = `${variant.attribute}: ${variant.value}`;
+      variantExtraPrice = round2(Number(variant.extraPrice || 0));
     }
 
     return {
       product: product._id,
-      variant: line.variant,
+      variant: line.variant || undefined,
       name: product.name,
       variantLabel,
-      qty: line.qty,
+      variantExtraPrice,
+      qty,
 
-      // Included products have no separate charge.
+      // Base product price remains included in the plan.
       unitPrice: 0,
       amount: 0,
       taxName: undefined,
@@ -69,10 +77,18 @@ export async function priceLines(inputLines, plan) {
   });
 }
 
-// Calculate the complete package price using the plan's tax.
-export function packageTotals(plan) {
-  const subtotal = round2(plan.price);
-  const taxRate = plan.tax?.active ? plan.tax.rate : 0;
+// Calculate package price including selected variant surcharges.
+export function packageTotals(plan, lines = []) {
+  const variantSurcharges = round2(
+    lines.reduce(
+      (sum, line) =>
+        sum + Number(line.variantExtraPrice || 0) * Number(line.qty || 0),
+      0
+    )
+  );
+
+  const subtotal = round2(Number(plan.price) + variantSurcharges);
+  const taxRate = plan.tax?.active ? Number(plan.tax.rate || 0) : 0;
   const taxTotal = round2((subtotal * taxRate) / 100);
 
   return {
@@ -82,5 +98,6 @@ export function packageTotals(plan) {
     subtotal,
     taxTotal,
     total: round2(subtotal + taxTotal),
+    variantSurcharges,
   };
 }

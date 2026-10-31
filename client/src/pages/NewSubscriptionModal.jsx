@@ -48,11 +48,38 @@ export default function NewSubscriptionModal({ onClose, onCreated }) {
     ? Number(selectedPlan.tax.rate || 0)
     : 0;
 
-  const packagePrice = Number(selectedPlan?.price || 0);
-  const taxAmount = Math.round(
-    (packagePrice * taxRate / 100 + Number.EPSILON) * 100
-  ) / 100;
-  const packageTotal = packagePrice + taxAmount;
+
+const basePackagePrice = Number(selectedPlan?.price || 0);
+
+const pricingLines = mode === 'template'
+  ? (tpl?.lines || [])
+  : lines;
+
+const variantSurcharges = pricingLines.reduce((sum, line) => {
+  const product = typeof line.product === 'object'
+    ? line.product
+    : prods.find(item => item._id === line.product);
+
+  if (!product || !line.variant) return sum;
+
+  const variant = product.variants?.find(
+    item => item._id === line.variant ||
+      String(item._id) === String(line.variant)
+  );
+
+  return sum + (
+    Number(variant?.extraPrice || 0) * Number(line.qty || 0)
+  );
+}, 0);
+
+const packagePrice = basePackagePrice + variantSurcharges;
+
+const taxAmount = Math.round(
+  (packagePrice * taxRate / 100 + Number.EPSILON) * 100
+) / 100;
+
+const packageTotal = packagePrice + taxAmount;
+
 
   const setLine = (index, patch) => {
     setLines(current => current.map((line, i) =>
@@ -292,9 +319,19 @@ export default function NewSubscriptionModal({ onClose, onCreated }) {
 
             <div className="totals">
               <div>
-                <span>Package price</span>
-                <span>{money(packagePrice)}</span>
-              </div>
+                <span>Base plan price</span>
+                <span>{money(basePackagePrice)}</span>
+                </div>
+
+                <div>
+                <span>Variant surcharges</span>
+                <span>{money(variantSurcharges)}</span>
+                </div>
+
+                <div>
+                <strong>Package subtotal</strong>
+                <strong>{money(packagePrice)}</strong>
+                </div>
 
               <div>
                 <span>
@@ -312,8 +349,10 @@ export default function NewSubscriptionModal({ onClose, onCreated }) {
             </div>
 
             <p className="hint">
-              Included products and their variants do not add separate charges.
-              Eligible subscription discounts are applied when invoices are generated.
+            I  Included product base prices are covered by the plan.
+            Selected variant surcharges are added to the package price.
+            Tax applies to the complete package, and eligible subscription
+            discounts are applied when invoices are generated.
             </p>
           </div>
         )}

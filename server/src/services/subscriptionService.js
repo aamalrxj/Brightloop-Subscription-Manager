@@ -64,7 +64,7 @@ async function getActivePlan(planId) {
 
 async function priceSubscriptionLines(lines, plan) {
   const pricedLines = await priceLines(lines, plan);
-  const totals = packageTotals(plan);
+  const totals = packageTotals(plan, pricedLines);
 
   return {
     lines: pricedLines,
