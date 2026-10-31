@@ -1,3 +1,4 @@
+
 import mongoose from 'mongoose';
 
 const userSchema = new mongoose.Schema({
@@ -5,6 +6,7 @@ const userSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true, lowercase: true, trim: true },
   password: { type: String, required: true, select: false },
   role: { type: String, enum: ['admin', 'staff', 'customer'], default: 'customer' },
+  active: { type: Boolean, default: true },
   resetTokenHash: String,
   resetTokenExpiry: Date,
 }, { timestamps: true });

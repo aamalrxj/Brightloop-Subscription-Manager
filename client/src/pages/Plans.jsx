@@ -1,3 +1,4 @@
+
 import { useState } from 'react';
 import api from '../api';
 import { useFetch } from '../hooks/useFetch';
@@ -10,6 +11,7 @@ import { money, date } from '../utils/format';
 const EMPTY_FORM = {
   name: '',
   price: '',
+  tax: '',
   period: 'monthly',
   minQty: '1',
   availableFrom: new Date().toISOString().slice(0, 10),
@@ -20,10 +22,11 @@ const EMPTY_FORM = {
   renewable: true,
 };
 
-function PlanModal({ plan, onClose, onSaved }) {
+function PlanModal({ plan, taxes, onClose, onSaved }) {
   const [form, setForm] = useState(() => plan ? {
     name: plan.name || '',
     price: String(plan.price ?? ''),
+    tax: plan.tax?._id || plan.tax || '',
     period: plan.period || 'monthly',
     minQty: String(plan.minQty ?? 1),
     availableFrom: plan.availableFrom
@@ -52,7 +55,8 @@ function PlanModal({ plan, onClose, onSaved }) {
       return;
     }
 
-    if (form.price === '' || Number(form.price) < 0) {
+    if (form.price === '' || !Number.isFinite(Number(form.price)) ||
+        Number(form.price) < 0) {
       setError('Enter a valid plan price.');
       return;
     }
@@ -76,6 +80,7 @@ function PlanModal({ plan, onClose, onSaved }) {
     const payload = {
       name: form.name.trim(),
       price: Number(form.price),
+      tax: form.tax || null,
       period: form.period,
       minQty: Number(form.minQty),
       availableFrom: form.availableFrom,
@@ -104,10 +109,7 @@ function PlanModal({ plan, onClose, onSaved }) {
   };
 
   return (
-    <Modal
-      title={plan ? 'Edit plan' : 'Create plan'}
-      onClose={onClose}
-    >
+    <Modal title={plan ? 'Edit plan' : 'Create plan'} onClose={onClose}>
       <form onSubmit={submit}>
         {error && <div className="error">{error}</div>}
 
@@ -123,7 +125,7 @@ function PlanModal({ plan, onClose, onSaved }) {
 
         <div className="two">
           <label>
-            Price (₹) *
+            Package price (₹) *
             <input
               type="number"
               min="0"
@@ -133,6 +135,9 @@ function PlanModal({ plan, onClose, onSaved }) {
               placeholder="0.00"
               required
             />
+            <span className="hint">
+              The complete recurring price for this package, before tax.
+            </span>
           </label>
 
           <label>
@@ -148,6 +153,24 @@ function PlanModal({ plan, onClose, onSaved }) {
             </select>
           </label>
         </div>
+
+        <label>
+          Tax on package price
+          <select
+            value={form.tax}
+            onChange={e => update('tax', e.target.value)}
+          >
+            <option value="">No tax</option>
+            {taxes.map(tax => (
+              <option key={tax._id} value={tax._id}>
+                {tax.name} ({tax.rate}%)
+              </option>
+            ))}
+          </select>
+          <span className="hint">
+            This tax applies to the package price, not to each included product.
+          </span>
+        </label>
 
         <label>
           Minimum quantity *
@@ -230,10 +253,7 @@ function PlanModal({ plan, onClose, onSaved }) {
           </label>
         </div>
 
-        <div
-          className="actions"
-          style={{ justifyContent: 'flex-end', marginTop: 18 }}
-        >
+        <div className="actions" style={{ justifyContent: 'flex-end', marginTop: 18 }}>
           <button
             type="button"
             className="btn"
@@ -243,11 +263,7 @@ function PlanModal({ plan, onClose, onSaved }) {
             Cancel
           </button>
 
-          <button
-            type="submit"
-            className="btn primary"
-            disabled={saving}
-          >
+          <button type="submit" className="btn primary" disabled={saving}>
             {saving ? 'Saving...' : plan ? 'Save changes' : 'Create plan'}
           </button>
         </div>
@@ -279,6 +295,18 @@ export default function Plans() {
     [page, dq, active]
   );
 
+  const {
+    data: taxData,
+    error: taxError,
+  } = useFetch(
+    () => api.get('/taxes', {
+      params: { limit: 50, active: true },
+    }),
+    []
+  );
+
+  const taxes = taxData?.items || [];
+
   const changeFilter = setter => value => {
     setter(value);
     setPage(1);
@@ -295,10 +323,7 @@ export default function Plans() {
   };
 
   const archivePlan = async plan => {
-    const confirmed = window.confirm(
-      `Archive "${plan.name}"?`
-    );
-
+    const confirmed = window.confirm(`Archive "${plan.name}"?`);
     if (!confirmed) return;
 
     setMessage('');
@@ -363,12 +388,15 @@ export default function Plans() {
           Clear filters
         </button>
 
-        <button className="btn" onClick={reload}>
-          Refresh
-        </button>
+        <button className="btn" onClick={reload}>Refresh</button>
       </div>
 
       {error && <div className="error">{error}</div>}
+      {taxError && (
+        <div className="hint">
+          Tax options could not be loaded. Plans can still be created without tax.
+        </div>
+      )}
       {actionError && <div className="error">{actionError}</div>}
       {message && <div className="success">{message}</div>}
 
@@ -378,7 +406,8 @@ export default function Plans() {
             <thead>
               <tr>
                 <th>Plan</th>
-                <th>Price</th>
+                <th>Package price</th>
+                <th>Tax</th>
                 <th>Period</th>
                 <th>Min. quantity</th>
                 <th>Available from</th>
@@ -394,9 +423,12 @@ export default function Plans() {
                 <tr key={plan._id}>
                   <td><strong>{plan.name}</strong></td>
                   <td>{money(plan.price)}</td>
-                  <td style={{ textTransform: 'capitalize' }}>
-                    {plan.period}
+                  <td>
+                    {plan.tax
+                      ? `${plan.tax.name} (${plan.tax.rate}%)`
+                      : 'No tax'}
                   </td>
+                  <td style={{ textTransform: 'capitalize' }}>{plan.period}</td>
                   <td>{plan.minQty || 1}</td>
                   <td>{date(plan.availableFrom)}</td>
                   <td>{date(plan.availableTo)}</td>
@@ -445,19 +477,11 @@ export default function Plans() {
               ))}
 
               {loading && !data && (
-                <tr>
-                  <td colSpan="9" className="muted">
-                    Loading plans...
-                  </td>
-                </tr>
+                <tr><td colSpan="10" className="muted">Loading plans...</td></tr>
               )}
 
               {data && data.items.length === 0 && (
-                <tr>
-                  <td colSpan="9" className="muted">
-                    No plans found.
-                  </td>
-                </tr>
+                <tr><td colSpan="10" className="muted">No plans found.</td></tr>
               )}
             </tbody>
           </table>
@@ -476,6 +500,7 @@ export default function Plans() {
       {(creating || editing) && (
         <PlanModal
           plan={editing}
+          taxes={taxes}
           onClose={() => {
             setCreating(false);
             setEditing(null);

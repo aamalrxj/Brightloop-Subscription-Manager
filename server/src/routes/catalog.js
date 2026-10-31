@@ -29,14 +29,21 @@ const productSchema = z.object({
   })).optional(),
 });
 
+
 const planSchema = z.object({
-  name: z.string().min(1), price: z.number().min(0),
+  name: z.string().min(1),
+  price: z.number().min(0),
+  tax: id.nullable().optional(),
   period: z.enum(['daily', 'weekly', 'monthly', 'yearly']),
   minQty: z.number().int().min(1).optional(),
-  availableFrom: date, availableTo: date,
-  autoClose: z.boolean().optional(), closable: z.boolean().optional(),
-  pausable: z.boolean().optional(), renewable: z.boolean().optional(),
+  availableFrom: date,
+  availableTo: date,
+  autoClose: z.boolean().optional(),
+  closable: z.boolean().optional(),
+  pausable: z.boolean().optional(),
+  renewable: z.boolean().optional(),
 });
+
 
 const discountSchema = z.object({
   name: z.string().min(1), type: z.enum(['fixed', 'percent']), value: z.number().min(0),
@@ -57,7 +64,7 @@ const router = Router();
 router.use(requireAuth);
 mount(router, '/taxes', crud(Tax, taxSchema));
 mount(router, '/products', crud(Product, productSchema, { populate: 'tax' }));
-mount(router, '/plans', crud(Plan, planSchema));
+mount(router, '/plans', crud(Plan, planSchema, { populate: 'tax' }));
 mount(router, '/discounts', crud(Discount, discountSchema, { populate: 'products' }));
 mount(router, '/templates', crud(QuotationTemplate, templateSchema, { populate: 'plan lines.product' }));
 

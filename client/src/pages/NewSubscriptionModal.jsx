@@ -1,11 +1,14 @@
+
 import { useState } from 'react';
 import api from '../api';
 import { useFetch } from '../hooks/useFetch';
 import Modal from '../components/Modal';
 import CustomerPicker from '../components/CustomerPicker';
-import { isoDay } from '../utils/format';
+import { isoDay, money } from '../utils/format';
 
-const list = path => () => api.get(path, { params: { limit: 50, active: true } });
+const list = path => () => api.get(path, {
+  params: { limit: 50, active: true },
+});
 
 export default function NewSubscriptionModal({ onClose, onCreated }) {
   const templates = useFetch(list('/templates'));
@@ -16,7 +19,9 @@ export default function NewSubscriptionModal({ onClose, onCreated }) {
   const [mode, setMode] = useState('template');
   const [templateId, setTemplateId] = useState('');
   const [planId, setPlanId] = useState('');
-  const [lines, setLines] = useState([{ product: '', variant: '', qty: 1 }]);
+  const [lines, setLines] = useState([
+    { product: '', variant: '', qty: 1 },
+  ]);
   const [startDate, setStartDate] = useState(isoDay(new Date()));
   const [terms, setTerms] = useState(0);
   const [error, setError] = useState('');
@@ -24,92 +29,322 @@ export default function NewSubscriptionModal({ onClose, onCreated }) {
 
   const tpl = templates.data?.items.find(t => t._id === templateId);
   const prods = products.data?.items ?? [];
-  const setLine = (i, patch) => setLines(ls => ls.map((l, j) => (j === i ? { ...l, ...patch } : l)));
+  const availablePlans = plans.data?.items ?? [];
+
+  const templatePlanId = tpl?.plan?._id || tpl?.plan;
+  const templatePlan = availablePlans.find(
+    plan => plan._id === templatePlanId
+  );
+
+  const manualPlan = availablePlans.find(
+    plan => plan._id === planId
+  );
+
+  const selectedPlan = mode === 'template'
+    ? templatePlan
+    : manualPlan;
+
+  const taxRate = selectedPlan?.tax?.active
+    ? Number(selectedPlan.tax.rate || 0)
+    : 0;
+
+  const packagePrice = Number(selectedPlan?.price || 0);
+  const taxAmount = Math.round(
+    (packagePrice * taxRate / 100 + Number.EPSILON) * 100
+  ) / 100;
+  const packageTotal = packagePrice + taxAmount;
+
+  const setLine = (index, patch) => {
+    setLines(current => current.map((line, i) =>
+      i === index ? { ...line, ...patch } : line
+    ));
+  };
 
   const submit = async e => {
-    e.preventDefault(); setError('');
-    if (!customer) return setError('Choose a customer');
-    const body = { customer: customer._id, startDate, paymentTermDays: Number(terms) || 0 };
+    e.preventDefault();
+    setError('');
+
+    if (!customer) {
+      setError('Choose a customer');
+      return;
+    }
+
+    const body = {
+      customer: customer._id,
+      startDate,
+      paymentTermDays: Number(terms) || 0,
+    };
+
     if (mode === 'template') {
-      if (!templateId) return setError('Choose a quotation template');
+      if (!templateId) {
+        setError('Choose a quotation template');
+        return;
+      }
+
       body.template = templateId;
     } else {
-      if (!planId) return setError('Choose a plan');
-      if (lines.some(l => !l.product)) return setError('Every line needs a product');
+      if (!planId) {
+        setError('Choose a plan');
+        return;
+      }
+
+      if (lines.some(line => !line.product)) {
+        setError('Every line needs a product');
+        return;
+      }
+
+      if (lines.some(line =>
+        !Number.isInteger(Number(line.qty)) || Number(line.qty) < 1
+      )) {
+        setError('Product quantities must be whole numbers of at least 1');
+        return;
+      }
+
       body.plan = planId;
-      body.lines = lines.map(l => ({ product: l.product, variant: l.variant || undefined, qty: Number(l.qty) || 1 }));
+      body.lines = lines.map(line => ({
+        product: line.product,
+        variant: line.variant || undefined,
+        qty: Number(line.qty),
+      }));
     }
+
     setBusy(true);
-    try { onCreated(await api.post('/subscriptions', body)); }
-    catch (err) { setError(err.message); setBusy(false); }
+
+    try {
+      onCreated(await api.post('/subscriptions', body));
+    } catch (err) {
+      setError(err.message);
+      setBusy(false);
+    }
   };
 
   return (
     <Modal title="New subscription" onClose={onClose} wide>
       <form onSubmit={submit}>
-        <label>Customer<CustomerPicker value={customer} onChange={setCustomer} /></label>
+        <label>
+          Customer
+          <CustomerPicker value={customer} onChange={setCustomer} />
+        </label>
 
         <div className="chips" style={{ marginBottom: 12 }}>
-          <button type="button" className={`btn small ${mode === 'template' ? 'primary' : ''}`} onClick={() => setMode('template')}>From template</button>
-          <button type="button" className={`btn small ${mode === 'manual' ? 'primary' : ''}`} onClick={() => setMode('manual')}>Manual</button>
+          <button
+            type="button"
+            className={`btn small ${mode === 'template' ? 'primary' : ''}`}
+            onClick={() => setMode('template')}
+          >
+            From template
+          </button>
+
+          <button
+            type="button"
+            className={`btn small ${mode === 'manual' ? 'primary' : ''}`}
+            onClick={() => setMode('manual')}
+          >
+            Manual
+          </button>
         </div>
 
         {mode === 'template' ? (
           <>
-            <label>Quotation template
-              <select value={templateId} onChange={e => setTemplateId(e.target.value)}>
+            <label>
+              Quotation template
+              <select
+                value={templateId}
+                onChange={e => setTemplateId(e.target.value)}
+              >
                 <option value="">Select a template</option>
-                {templates.data?.items.map(t => <option key={t._id} value={t._id}>{t.name}</option>)}
+                {templates.data?.items.map(template => (
+                  <option key={template._id} value={template._id}>
+                    {template.name}
+                  </option>
+                ))}
               </select>
             </label>
-            {templates.data && !templates.data.items.length && <p className="hint">No templates yet. Use Manual, or create one under Templates.</p>}
+
+            {templates.data && !templates.data.items.length && (
+              <p className="hint">
+                No templates yet. Use Manual, or create one under Templates.
+              </p>
+            )}
+
             {tpl && (
               <div className="card preview">
-                <strong>{tpl.plan?.name}</strong> <span className="muted">{tpl.plan?.period}, valid {tpl.validityDays} days</span>
-                <ul>{tpl.lines.map((l, i) => <li key={i}>{l.qty} x {l.product?.name}</li>)}</ul>
+                <strong>{tpl.plan?.name || templatePlan?.name}</strong>
+                <span className="muted">
+                  {templatePlan?.period || tpl.plan?.period},
+                  {' '}valid {tpl.validityDays} days
+                </span>
+
+                <p className="hint">Included products</p>
+                <ul>
+                  {tpl.lines.map((line, index) => (
+                    <li key={index}>
+                      {line.qty} × {line.product?.name}
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
           </>
         ) : (
           <>
-            <label>Plan
-              <select value={planId} onChange={e => setPlanId(e.target.value)}>
+            <label>
+              Plan
+              <select
+                value={planId}
+                onChange={e => setPlanId(e.target.value)}
+              >
                 <option value="">Select a plan</option>
-                {plans.data?.items.map(p => <option key={p._id} value={p._id}>{p.name} ({p.period})</option>)}
+                {availablePlans.map(plan => (
+                  <option key={plan._id} value={plan._id}>
+                    {plan.name} ({plan.period})
+                  </option>
+                ))}
               </select>
             </label>
+
             <div className="lines">
-              <div className="muted" style={{ marginBottom: 6 }}>Product lines</div>
-              {lines.map((l, i) => {
-                const p = prods.find(p => p._id === l.product);
+              <div className="muted" style={{ marginBottom: 6 }}>
+                Included products
+              </div>
+
+              {lines.map((line, index) => {
+                const product = prods.find(
+                  item => item._id === line.product
+                );
+
                 return (
-                  <div className="line-row" key={i}>
-                    <select value={l.product} onChange={e => setLine(i, { product: e.target.value, variant: '' })}>
+                  <div className="line-row" key={index}>
+                    <select
+                      value={line.product}
+                      onChange={e => setLine(index, {
+                        product: e.target.value,
+                        variant: '',
+                      })}
+                    >
                       <option value="">Product</option>
-                      {prods.map(p => <option key={p._id} value={p._id}>{p.name}</option>)}
+                      {prods.map(item => (
+                        <option key={item._id} value={item._id}>
+                          {item.name}
+                        </option>
+                      ))}
                     </select>
-                    <select value={l.variant} disabled={!p?.variants.length} onChange={e => setLine(i, { variant: e.target.value })}>
-                      <option value="">{p?.variants.length ? 'No variant' : '-'}</option>
-                      {p?.variants.map(v => <option key={v._id} value={v._id}>{v.attribute}: {v.value} (+{v.extraPrice})</option>)}
+
+                    <select
+                      value={line.variant}
+                      disabled={!product?.variants.length}
+                      onChange={e => setLine(index, {
+                        variant: e.target.value,
+                      })}
+                    >
+                      <option value="">
+                        {product?.variants.length ? 'No variant' : '-'}
+                      </option>
+
+                      {product?.variants.map(variant => (
+                        <option key={variant._id} value={variant._id}>
+                          {variant.attribute}: {variant.value}
+                        </option>
+                      ))}
                     </select>
-                    <input type="number" min="1" value={l.qty} onChange={e => setLine(i, { qty: e.target.value })} />
-                    <button type="button" className="btn ghost small" disabled={lines.length === 1}
-                      onClick={() => setLines(ls => ls.filter((_, j) => j !== i))}>Remove</button>
+
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={line.qty}
+                      onChange={e => setLine(index, {
+                        qty: e.target.value,
+                      })}
+                    />
+
+                    <button
+                      type="button"
+                      className="btn ghost small"
+                      disabled={lines.length === 1}
+                      onClick={() => setLines(current =>
+                        current.filter((_, i) => i !== index)
+                      )}
+                    >
+                      Remove
+                    </button>
                   </div>
                 );
               })}
-              <button type="button" className="btn small" onClick={() => setLines(ls => [...ls, { product: '', variant: '', qty: 1 }])}>Add line</button>
+
+              <button
+                type="button"
+                className="btn small"
+                onClick={() => setLines(current => [
+                  ...current,
+                  { product: '', variant: '', qty: 1 },
+                ])}
+              >
+                Add line
+              </button>
             </div>
           </>
         )}
 
+        {selectedPlan && (
+          <div className="card preview" style={{ marginTop: 14 }}>
+            <strong>Subscription package pricing</strong>
+
+            <div className="totals">
+              <div>
+                <span>Package price</span>
+                <span>{money(packagePrice)}</span>
+              </div>
+
+              <div>
+                <span>
+                  Tax {taxRate > 0
+                    ? `(${selectedPlan.tax.name} - ${taxRate}%)`
+                    : ''}
+                </span>
+                <span>{money(taxAmount)}</span>
+              </div>
+
+              <div className="grand">
+                <span>Total per {selectedPlan.period}</span>
+                <span>{money(packageTotal)}</span>
+              </div>
+            </div>
+
+            <p className="hint">
+              Included products and their variants do not add separate charges.
+              Eligible subscription discounts are applied when invoices are generated.
+            </p>
+          </div>
+        )}
+
         <div className="two">
-          <label>Start date<input type="date" required value={startDate} onChange={e => setStartDate(e.target.value)} /></label>
-          <label>Payment terms (days to pay)<input type="number" min="0" value={terms} onChange={e => setTerms(e.target.value)} /></label>
+          <label>
+            Start date
+            <input
+              type="date"
+              required
+              value={startDate}
+              onChange={e => setStartDate(e.target.value)}
+            />
+          </label>
+
+          <label>
+            Payment terms (days to pay)
+            <input
+              type="number"
+              min="0"
+              value={terms}
+              onChange={e => setTerms(e.target.value)}
+            />
+          </label>
         </div>
 
         {error && <div className="error">{error}</div>}
-        <button className="btn primary block" disabled={busy}>{busy ? 'Creating...' : 'Create subscription'}</button>
+
+        <button className="btn primary block" disabled={busy}>
+          {busy ? 'Creating...' : 'Create subscription'}
+        </button>
       </form>
     </Modal>
   );
