@@ -29,3 +29,36 @@ Other: Axios, Zod, Node-Cron
 
 Project Goal
 The goal of Brightloop is to simplify subscription management and reduce the manual effort involved in handling recurring billing, customer information and payments. Built as a project to explore how a real-world subscription-based business platform works.
+
+Prerequisites
+
+Node.js and npm
+
+MongoDB running locally or a MongoDB connection URI
+
+Installation
+Clone the repository:
+git clone https://github.com/aamalrxj/Brightloop-Subscription-Manager.git
+cd Brightloop-Subscription-Manager
+
+Install backend dependencies:
+cd server
+npm install
+
+Create a .env file inside the server folder:
+PORT=5000
+MONGO_URI=mongodb://127.0.0.1:27017/brightloop
+JWT_SECRET=your_secret_key
+CLIENT_URL=http://localhost:5173
+BILLING_CRON_ENABLED=true
+
+Configure SMTP environment variables if you want to use email functionality.
+Start the backend:
+npm run dev
+
+Open another terminal and install frontend dependencies:
+cd client
+npm install
+
+Start the frontend:
+npm run dev
