@@ -8,6 +8,10 @@ const lineSchema = new mongoose.Schema({
   variant: ObjectId,
   name: String,
   variantLabel: String,
+
+  // Additional price charged for the selected variant.
+  variantExtraPrice: { type: Number, default: 0, min: 0 },
+
   qty: Number,
   unitPrice: Number,
   taxName: String,
@@ -39,6 +43,10 @@ const subscriptionSchema = new mongoose.Schema({
 
   // Snapshot of the package price when this subscription is priced.
   packagePrice: { type: Number, min: 0 },
+
+  // Total additional charges from selected product variants.
+  variantSurcharges: { type: Number, default: 0, min: 0 },
+
   taxName: String,
   taxRate: { type: Number, default: 0 },
 
@@ -51,6 +59,7 @@ const subscriptionSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 subscriptionSchema.index({ status: 1, nextBillingDate: 1 });
+subscriptionSchema.index({ status: 1, paused: 1, nextBillingDate: 1 });
 subscriptionSchema.index({ customer: 1, createdAt: -1 });
 subscriptionSchema.index({ createdAt: -1 });
 
