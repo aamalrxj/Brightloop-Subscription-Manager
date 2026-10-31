@@ -62,3 +62,6 @@ npm install
 
 Start the frontend:
 npm run dev
+
+Video Link: https://drive.google.com/file/d/1HMOt34bUDo462RGQB-iiAednr2PkcHdM/view
+Video Folder: https://drive.google.com/drive/folders/1yMZTkIWYpMpSzu-uht_sGjZ0hKHJS_Ly?usp=drive_link
